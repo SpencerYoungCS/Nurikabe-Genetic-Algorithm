@@ -37,7 +37,8 @@ best_individual =[(0,3),(0,0),(0,1),(0,2),(0,4),(2,1),(2,3),(2,4),(4,1),(3,0),(4
 # Specify the grid size
 # \/ \/ \/ \/ \/
 # grid_size = 5
-grid_size = 7
+grid_size = 6
+# grid_size = 7
 # grid_size = 10
 # /\ /\ /\ /\ /\
 
@@ -50,12 +51,17 @@ list_size = grid_size * grid_size
 # center_coords = {(0,0):1, (2,0):7, (3,3):1}
 # center_coords = {(1,4):4, (3,1):1, (3,3):1}
 # center_coords = {(0,0):5, (0,2):1, (0,4):3, (4,0):1, (4,2):1, (4,4):1}
-
 # /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\
+
+# GRID SIZE 6
+# \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/
+center_coords = {(1,1):1, (2,0):5, (2,2):3, (4,2):2, (4,5):6}
+# /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\
+
 # GRID SIZE 7
 # \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/ \/
 # center_coords = {(1,2): 3, (1,4): 4, (2,1): 1, (2,5): 1, (3,3): 1, (4,1): 4, (4,5): 1, (5,2): 1, (5,4): 4}
-center_coords = {(0,1):6, (0,3):2, (2,6):5, (3,5):6, (5,5):1}
+# center_coords = {(0,1):6, (0,3):2, (2,6):5, (3,5):6, (5,5):1}
 # center_coords = {(0,0):19}
 # center_coords = {(0,0):5, (0,4):1, (0,6):7, (2,0):4, (4,6):1, (6,0):5, (6,2):3, (6,6):1}
 # /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\
@@ -106,7 +112,7 @@ for coord in all_coords:
 # TODOS .... Need to add multiple Populations and find a way to do multi-objective fitness.
 class NurikabeGA():
 
-    def __init__(self, grid_size, center_coords, generations):
+    def __init__(self, grid_size, center_coords, generations, print_interval):
         # Grid size indicates a NxN grid
         self.grid_size = grid_size
 
@@ -118,6 +124,8 @@ class NurikabeGA():
                           for x in range(self.grid_size) if (x, y) not in self.center_coords]
 
         self.generations = generations
+
+        self.print_interval = print_interval
 
     def geneticAlgorithm(self, pop_size, mating_pool_size, elite_size, mutation_rate, multi_objective_fitness=False):
         startTime = time.time()
@@ -151,7 +159,7 @@ class NurikabeGA():
                     best_individual.printAsMatrix()
                     break
 
-                if i % 10 == 0:
+                if i % self.print_interval == 0:
                     print()
                     print("Generation ", i, ": Best Fitness = ", best_fitness)
                     print("Best Individual: ", best_individual.individual)
@@ -193,7 +201,8 @@ class NurikabeGA():
                     best_individual.printAsMatrix()
                     break
 
-                if i % 10 == 0:
+                if i % self.print_interval == 0:
+                    print()
                     print("Average Fitness: ", avg_fitness/pop_size)
                     print("Generation ", i, ": Best Fitness = ", best_fitness)
                     print("Best Individual: ", best_individual.individual)
@@ -201,6 +210,7 @@ class NurikabeGA():
                     print("Connected Oceans: ", best_individual.findConnectedOcean())
                     print("# Islands Isolated: ", best_individual.isIsolated())
                     print("Islands Not Isolated: ", best_individual.islandsNotIsolated())
+                    best_individual.fixRange()
                     best_individual.printAsMatrix()
 
                 avg_fitness = 0
@@ -277,8 +287,12 @@ class Population():
         for i in range(self.mating_pool_size - self.elite_size):
             random_parent1 = random.randint(0, self.elite_size-1)
             random_parent2 = random.randint(0, self.mating_pool_size-1)
-
-            parent1 = elites[random_parent1]
+            
+            random_chance = random.random()
+            if random_chance < 0.5:
+                parent1 = elites[random_parent1]
+            else:
+                parent1 = mating_pool[random.randint(0, self.mating_pool_size-1)]
             parent2 = mating_pool[random_parent2]
 
             # Find matching coordinates between two parents (Except the center coords)
@@ -403,6 +417,10 @@ class Population():
                     child.individual[random_ocean] = temp_coord
             else:
                 child.propogationMutation()
+                if rand_chance_2 < self.mutation_rate:
+                    child.fixRange()
+                else:
+                    child.mutateRange()
 
             # Fixing a random coordinate in a square ocean
             if(squareOcean != 0):
@@ -496,6 +514,11 @@ class Individual():
         # isIsolated() will return a value indicating how many good (or isolated) islands there are.
         # A perfectly fit individual will have a fitness equal to the length.
 
+        if self.allInRange():
+            pass
+        else:
+            return 0
+
         oceans_fitness = self.connectedFitnessOcean()
         isolation_fitness = self.isIsolated()
 
@@ -503,9 +526,9 @@ class Individual():
             total_fitness += max_waters
         else:
             return oceans_fitness
-
+        
         if self.isOceanSquare():
-            return total_fitness - self.numOceanSquares()
+            return oceans_fitness - self.numOceanSquares()*4
 
         total_fitness += isolation_fitness
         if isolation_fitness == len(center_coords):
@@ -705,7 +728,7 @@ class Individual():
         x1, y1 = coord1
         x2, y2 = coord2
         distance = abs(x2-x1) + abs(y2-y1)
-        if (centerValue <= distance):
+        if (distance <= centerValue):
             return True
         return False
 
@@ -946,19 +969,68 @@ class Individual():
         next_index = 1
         for main_coord_index in cum_sum_butlast:
             mainX, mainY = self.individual[main_coord_index]
-            distance = math.sqrt(abs(coordX - mainX)**2 + abs(coordY - mainY)**2) #Euclidian
-            # distance = abs(coordX - mainX) + abs(coordY - mainY) #manhattan
+            # distance = math.sqrt(abs(coordX - mainX)**2 + abs(coordY - mainY)**2) #Euclidian
+            distance = abs(coordX - mainX) + abs(coordY - mainY) #manhattan
             if distance < closest_distance:
                 closest_distance = distance
                 closest_coord_range = range(main_coord_index+1, cum_sum[next_index])
             next_index += 1
         return closest_coord_range
+    
+    def fixRange(self):
+        for i in range(len(cum_sum_butlast)):
+            center = self.individual[cum_sum[i]]
+            max_size = center_coords[center]
+            for coord in self.individual[cum_sum[i]+1:cum_sum[i+1]]:
+                if max_size != 1:
+                    if self.inRange(max_size, center, coord):
+                        pass
+                    else:
+                        in_range_oceans = [x for x in self.individual[cum_sum[-1]:] if self.inRange(max_size, center, x)]
+                        if in_range_oceans:
+                            random_ocean = random.choice(in_range_oceans)
+                            rand_ocean_index = self.individual.index(random_ocean)
+                            coord_index = self.individual.index(coord)
+                            
+                            self.individual[rand_ocean_index] = coord
+                            self.individual[coord_index] = random_ocean
+    
+    def allInRange(self):
+        for i in range(len(cum_sum_butlast)):
+            center = self.individual[cum_sum[i]]
+            max_size = center_coords[center]
+            for coord in self.individual[cum_sum[i]+1:cum_sum[i+1]]:
+                if max_size != 1:
+                    if self.inRange(max_size, center, coord):
+                        pass
+                    else:
+                        return False
+        return True
+
+    def mutateRange(self):
+        for i in range(len(cum_sum_butlast)):
+            center = self.individual[cum_sum[i]]
+            max_size = center_coords[center]
+            coords = self.individual[cum_sum[i]+1:cum_sum[i+1]]
+            if coords:
+                coord = random.choice(coords)
+                if max_size != 1:
+                    in_range_oceans = [x for x in self.individual[cum_sum[-1]:] if self.inRange(max_size, center, x)]
+                    if in_range_oceans:
+                        random_ocean = random.choice(in_range_oceans)
+                        rand_ocean_index = self.individual.index(random_ocean)
+                        coord_index = self.individual.index(coord)
+                                    
+                        self.individual[rand_ocean_index] = coord
+                        self.individual[coord_index] = random_ocean
+
+
 
 
 def main():
-    nurikabe = NurikabeGA(grid_size=grid_size, center_coords=center_coords, generations=5000)
+    nurikabe = NurikabeGA(grid_size=grid_size, center_coords=center_coords, generations=100000, print_interval=5)
     nurikabe.geneticAlgorithm(
-        pop_size=500, mating_pool_size=450, elite_size=10, mutation_rate=0.5, multi_objective_fitness=False)
+        pop_size=2000, mating_pool_size=1000, elite_size=100, mutation_rate=0.5, multi_objective_fitness=False)
 
 
     return 0
